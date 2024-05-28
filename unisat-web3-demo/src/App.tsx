@@ -1,6 +1,8 @@
 import React, { useEffect, useRef, useState } from "react";
+import { useLocation, useSearchParams } from "react-router-dom";
 import "./App.css";
 import { Button, Card, Input, Radio } from "antd";
+import axios from "axios";
 
 function App() {
   const [unisatInstalled, setUnisatInstalled] = useState(false);
@@ -13,7 +15,7 @@ function App() {
     unconfirmed: 0,
     total: 0,
   });
-  const [network, setNetwork] = useState("livenet");
+  const [network, setNetwork] = useState("testnet");
 
   const getBasicInfo = async () => {
     const unisat = (window as any).unisat;
@@ -84,7 +86,6 @@ function App() {
           unisat.removeListener("networkChanged", handleNetworkChanged);
       };
     }
-
     checkUnisat().then();
   }, []);
 
@@ -218,15 +219,62 @@ function SignPsbtCard() {
   );
 }
 
+function GetQueryParams() {
+  /**
+   * @GetQueryParams checks for query params specifically `msg` or `psbt`
+   * @Returns        `msg` or `psbt` string value if present, else none
+   */
+  let params = window.location.search;
+  if (!params) return null;
+
+  const urlParams = new URLSearchParams(params);
+  return urlParams.get("msg");
+}
+
+async function SendToWatchOnly(msg: string): Promise<boolean> {
+  /**
+   * @SendToWatchOnly sends the message to the watch-only wallet
+   * @msg            the message to be sent
+   */
+  return await axios
+    .post("http://localhost:1323/mailbox/message", { message: msg }, { headers: {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods':'GET,PUT,POST,DELETE,PATCH,OPTIONS',
+    }})
+    .then((response) => {
+      console.log(response);
+      return true;
+    })
+    .catch((error) => {
+      console.log(error);
+      return false;
+    });
+
+}
+
 function SignMessageCard() {
-  const [message, setMessage] = useState("hello world~");
+  const [message, setMessage] = useState("");
+  const [searchParams] = useSearchParams();
+  // useEffect for searchParams only
+  useEffect(() => {
+    console.log("USE EFFECT: ", searchParams);
+    let params = searchParams.get("message");
+    if (params) {
+      console.log("MESSAGE: ", searchParams.get("message"));
+      setMessage(params);
+      console.log(message)
+    }
+  }, [message, searchParams]);
+
+  
   const [signature, setSignature] = useState("");
   return (
     <Card size="small" title="Sign Message" style={{ width: 300, margin: 10 }}>
       <div style={{ textAlign: "left", marginTop: 10 }}>
         <div style={{ fontWeight: "bold" }}>Message:</div>
         <Input
-          defaultValue={message}
+          value={message}
+
           onChange={(e) => {
             setMessage(e.target.value);
           }}
@@ -241,6 +289,14 @@ function SignMessageCard() {
         onClick={async () => {
           const signature = await (window as any).unisat.signMessage(message);
           setSignature(signature);
+          const result = await SendToWatchOnly(signature);
+          if (result) {
+            // TODO: pop a success modal
+            console.log("Message sent to watch-only wallet");
+          } else {
+            // TODO: pop an error modal
+            console.log("Error sending message to watch-only wallet");
+          }
         }}
       >
         Sign Message
